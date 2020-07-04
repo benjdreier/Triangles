@@ -1,0 +1,375 @@
+<html>
+<body style="margin: 0">
+
+<div id="uploadDiv"> Upload Image: <input type="file"> </div>
+
+<canvas id="canvas"></canvas>
+
+<script src="delaunator.min.js"> </script>
+<script type="module">
+
+// todo: another version of this where they don't float around w physics
+// but you click to add a new point so you can define some cool geometry 
+// yourself, and you can choose different options for color sampling
+
+
+const c = document.getElementById("canvas");
+const ctx = c.getContext("2d");
+
+c.width = document.body.clientWidth;
+c.height = document.body.clientHeight;
+
+var points = [];
+var vels = [];
+var accels = [];
+
+var delauny = [];
+
+var deltaTime = 17; //millis, 60fps
+
+var n = 80; // number of points
+var r = 50; //how far away they have to be initially
+
+var equil = 10*r*Math.sqrt((c.width * c.height) / n); // equilibrium length of spring
+
+var imageObj = new Image();
+var imageData;
+
+function init() {
+	points = generatePoints(n, r);
+	//delauny = Delaunator.from(points);
+	//imageObj.src = 'Lion.jpg';
+	ctx.drawImage(imageObj, 0, 0, c.width, c.height);
+	imageData = ctx.getImageData(0, 0, c.width, c.height).data;
+	console.log(imageData);
+	
+	//drawPoints();
+	setInterval(update, deltaTime);
+}
+
+function update() {
+	clear();
+	delauny = Delaunator.from(points);
+	//drawEdges(points, delauny);
+	drawTrisFilled();
+
+	drawAveragePoint();
+	//drawAccels();
+
+	nudgePoints(points, delauny);
+}
+
+window.addEventListener('load', function() {
+	document.querySelector('input[type="file"]').addEventListener('change', function(){
+		if(this.files && this.files[0]){
+			imageObj.src = URL.createObjectURL(this.files[0]);
+			imageObj.onload = function() {
+				// drawImage(imageObj);
+				document.getElementById("uploadDiv").hidden = true;
+				init();
+			}
+			
+		}
+	})
+});
+
+function getPixel(data, x, y, w) {
+	// data is a 4*w*h long array
+	// rgba for each pixel
+	let s = 4 * (Math.floor(y)*w + Math.floor(x));
+	return [data[s], data[s+1], data[s+2]];
+}
+
+// Populate the accels array with the proper net forces
+// being exerted on each point
+let k = 0.00001;
+function getAccels(points, delauny) {
+	for(let e in delauny.triangles) {
+		let startPoint = delauny.triangles[e];
+		let endPoint = delauny.triangles[nextHalfedge(+e)];
+
+		// their displacement is prop. to force (hookes law)
+		// add it to the accels acting on this point
+		// BUT TAKE INTO ACCOUNT EQUILIBRIUM
+
+		let norm = dist(points[startPoint], points[endPoint]);
+		let forceMag = (norm - equil) ** 2;
+
+		accels[startPoint][0] += k * (forceMag / norm) * (points[endPoint][0] - points[startPoint][0]);
+		accels[startPoint][1] += k * (forceMag / norm) * (points[endPoint][1] - points[startPoint][1]);
+
+		// if this edge is on the hull, do the opposing force from the other side too
+		if(delauny.halfedges[e] == -1) {
+			accels[endPoint][0] += k * (forceMag / norm) * (points[startPoint][0] - points[endPoint][0]);
+			accels[endPoint][1] += k * (forceMag / norm) * (points[startPoint][1] - points[endPoint][1]);
+		}
+		
+	}
+}
+
+function drawAccels() {
+	let m = 100;
+	ctx.strokeStyle = "red";
+	for(let i in points) {
+		let a = accels[i];
+		let p = points[i];
+
+		//console.log(p);
+
+		ctx.beginPath();
+		ctx.moveTo(p[0], p[1]);
+		ctx.lineTo(p[0] + m*a[0], p[1] + m*a[1]);
+		ctx.stroke();
+		ctx.closePath();
+	}
+}
+
+// Based on their edges, update velocities and move 
+let j = 0.0017;
+function nudgePoints(points, delauny) {
+	// update accels
+	getAccels(points, delauny);
+
+	// apply drag
+	addDrag(0.8, 1, 1);
+
+	// use accels to update velocities
+	for(let i in accels) {
+		// only push if they don't have the immovable=true flag
+		if(points[i][2] != true) {
+			vels[i][0] += j * accels[i][0];
+			vels[i][1] += j * accels[i][1];
+			// now use vel to update position
+			points[i][0] += vels[i][0];
+			points[i][1] += vels[i][1];
+		}
+		else {
+			console.log("u r the only exception");
+		}
+	}
+
+	// TODO: when it leaves the screen spawn a new point
+	// init to 0 accel but keep velocity
+
+}
+
+function addDrag(amt, maxa, maxv) {
+	// also apply a max accel
+	for(let i in accels) {
+		if(points[i][2] != true){
+			accels[i][0] *= amt;
+			accels[i][1] *= amt;
+
+			let asize = norm(accels[i]);
+			if(asize > maxa) {
+				accels[i][0] *= maxa/asize;
+				accels[i][1] *= maxa/asize;
+			}
+
+			let vsize = norm(vels[i]);
+			if(vsize > maxv) {
+				vels[i][0] *= maxv/vsize;
+				vels[i][1] *= maxv/vsize;
+			}
+		}
+	}
+} 
+
+function drawEdges(points, delauny) {
+	ctx.strokeStyle = "black";
+	forEachTriangleEdge(points, delauny, (e, p , q) => {
+		ctx.beginPath();
+		ctx.moveTo(p[0], p[1]);
+		ctx.lineTo(q[0], q[1]);
+		ctx.stroke();
+		ctx.closePath();
+	})
+}
+
+let drawCenters = true;
+let centers = [];
+function drawTrisFilled() {
+	centers = [];
+	for (let t = 0; t < delauny.triangles.length / 3; t++) {
+        let trips = pointsOfTriangle(delauny, t).map(p => points[p]);
+
+        //let center = circumcenter(trips[0], trips[1], trips[2]);
+        let center = incenter(trips[0], trips[1], trips[2]);
+
+        if(drawCenters) {
+        	centers.push(center);
+        }
+
+        // todo: make this some sort of average across the triangle so it
+        // changes more smoothly than a single point sample.
+        // maybe sample around a radius of the point
+        ctx.fillStyle = colorAtPoint(imageData, center);
+
+        ctx.beginPath();
+        ctx.moveTo(trips[0][0], trips[0][1]);
+        ctx.lineTo(trips[1][0], trips[1][1]);
+        ctx.lineTo(trips[2][0], trips[2][1]);
+        ctx.fill();
+        ctx.closePath();
+    }
+
+    if(drawCenters) {
+    	for(let i in centers) {
+    		let center = centers[i];
+    		console.log(center);
+	    	ctx.fillStyle = "red";
+	    	ctx.beginPath();
+	        ctx.arc(center[0], center[1], 3, 0, Math.PI*2);
+	        ctx.fill();
+	        ctx.closePath();
+    	}
+    }
+}
+
+function colorAtPoint(img, point) {
+	//console.log(img);
+	let rgb = getPixel(img, point[0], point[1], c.width);
+	return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+}
+
+function nextHalfedge(e) { return (e % 3 === 2) ? e - 2 : e + 1; }
+
+function forEachTriangleEdge(points, delaunay, callback) {
+  for (let e = 0; e < delaunay.triangles.length; e++) {
+      if (e > delaunay.halfedges[e]) {
+          const p = points[delaunay.triangles[e]];
+          const q = points[delaunay.triangles[nextHalfedge(e)]];
+          callback(e, p, q);
+      }
+  }
+}
+
+function edgesOfTriangle(t) { return [3 * t, 3 * t + 1, 3 * t + 2]; }
+
+function pointsOfTriangle(delaunay, t) {
+    return edgesOfTriangle(t)
+        .map(e => delaunay.triangles[e]);
+}
+
+function triangleCenter(points, delaunay, t) {
+    const vertices = pointsOfTriangle(delaunay, t).map(p => points[p]);
+    return circumcenter(vertices[0], vertices[1], vertices[2]);
+}
+
+function circumcenter(a, b, c) {
+    const ad = a[0] * a[0] + a[1] * a[1];
+    const bd = b[0] * b[0] + b[1] * b[1];
+    const cd = c[0] * c[0] + c[1] * c[1];
+    const D = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+    return [
+        1 / D * (ad * (b[1] - c[1]) + bd * (c[1] - a[1]) + cd * (a[1] - b[1])),
+        1 / D * (ad * (c[0] - b[0]) + bd * (a[0] - c[0]) + cd * (b[0] - a[0])),
+    ];
+}
+
+function incenter(a, b, c) {
+	let C = Math.sqrt((b[0] - a[0]) ** 2) + ((b[1] - a[1]) ** 2);
+	let A = Math.sqrt((c[0] - b[0]) ** 2) + ((c[1] - b[1]) ** 2);
+	let B = Math.sqrt((a[0] - c[0]) ** 2) + ((a[1] - c[1]) ** 2);
+
+	return([
+		(A * a[0] + B * b[0] + C * c[0]) / (A+B+C),
+		(A * a[1] + B * b[1] + C * c[1]) / (A+B+C),
+	]);
+}
+
+function drawPoints() {
+	for(let i in points) {
+		let p = points[i];
+		ctx.beginPath();
+		ctx.arc(p[0], p[1], 3, 0, 2*Math.PI);
+		ctx.stroke();
+		ctx.closePath();
+	}
+}
+
+function drawAveragePoint() {
+	let x=0;
+	let y=0;
+	for (let p in points) {
+		x += points[p][0];
+		y += points[p][1];
+	}
+
+	// draw the average point
+	ctx.beginPath(x/points.length, y/points.length);
+	ctx.arc(x/points.length, y/points.length, 10, 0, 2*Math.PI);
+	ctx.fill();
+	ctx.closePath();
+}
+
+// todo: attach fixed corner points
+// to the triangulazation (with an option to get rid of them?)
+// so it takes up the whole screen/ not just a bubble anymore
+const cornerPoints = true;
+
+function generatePoints(n, r) {
+	let points = [];
+
+    for(let i = 0; i < n; i++) {
+      let point = null;
+      // only generate a point that is far away from other points
+      // this is a flawed method but works for sparse coverings
+      while(!distantEnough(point, points, r)) {
+        point = [
+          Math.random()*(c.width),
+          Math.random()*(c.height)
+        ];
+      }
+      points.push(point);
+      vels.push([0, 0]);
+      accels.push([0, 0]);
+    }
+
+    // maybe init with some immobile corner points
+	if(cornerPoints) {
+    	points.push([0, 0, true]);
+    	points.push([c.width, 0, true]);
+    	points.push([0, c.height, true]);
+    	points.push([c.width, c.height, true]);
+
+
+    	// add thei accels and vels too ig
+    	accels.push([0,0],[0,0],[0,0],[0,0]);
+    	vels.push([0,0],[0,0],[0,0],[0,0]);
+    }
+
+    console.log("points:", points);
+    return points;
+}
+
+function distantEnough(p0, points, radius) {
+  if(!p0) return false;
+  for(let p1 of points) {
+    if (Math.pow(p0[0] - p1[0], 2) + Math.pow(p0[1] - p1[1], 2) < radius * radius){
+      return false;
+    }
+  }
+  return true;
+}
+
+function dist(p1, p2) {
+	return Math.sqrt(((p2[0] - p1[0]) ** 2) + ((p2[1] - p1[1]) **2));
+}
+
+function norm(v) {
+	return Math.sqrt(v[0] ** 2 + v[1] ** 2);
+}
+
+function clear() {
+	// let oldStyle = ctx.fillStyle;
+	// ctx.fillStyle = "white"; //background color
+	// ctx.fillRect(0,0,c.width,c.height);
+	// ctx.fillStyle = oldStyle;
+
+	ctx.drawImage(imageObj, 0, 0, c.width, c.height);
+}
+
+</script>
+</body>
+</html>
