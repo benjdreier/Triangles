@@ -150,6 +150,9 @@ window.addEventListener('load', function() {
 let dragging = null;
 let moved = false;
 c.addEventListener('mousedown', function(e) {
+
+	if (e.which == 3) return;
+
 	let target = getTargetPoint(e.clientX, e.clientY, 5);
 	if(target) {
 		moved = false;
