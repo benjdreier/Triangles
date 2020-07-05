@@ -24,27 +24,36 @@
 <canvas id="canvas"></canvas>
 
 <script> 
-	// Make the toolbox minimizable on click
-	let toolboxHeader = document.getElementById("toolbox-header");
-	let toolboxContent = document.getElementById("toolbox-content");
+// Make the toolbox minimizable on click
+let toolboxHeader = document.getElementById("toolbox-header");
+let toolboxContent = document.getElementById("toolbox-content");
 
-	toolboxHeader.addEventListener("click", function(e){
-		// Toggle between visible and hidden
-		if(toolboxContent.style.display == "none"){
-			toolboxContent.style.display = "inline";
-			toolboxHeader.innerText = "Toolbox (-)";
-		}
-		else{
-			toolboxContent.style.display = "none";
-			toolboxHeader.innerText = "Toolbox (+)";
-		}
-	});
+toolboxHeader.addEventListener("click", function(e){
+	// Toggle between visible and hidden
+	if(toolboxContent.style.display == "none"){
+		toolboxContent.style.display = "inline";
+		toolboxHeader.innerText = "Toolbox (-)";
+	}
+	else{
+		toolboxContent.style.display = "none";
+		toolboxHeader.innerText = "Toolbox (+)";
+	}
+});
 
-	// todo: draggable
+// todo: draggable
 
 </script>
 <script src="delaunator.min.js"> </script>
 <script type="module">
+
+// TODO:
+// Stop Strecthing the gd picture
+// Saving/Loading point sets
+// Multiple "Layers"/clouds
+// Reconsider equilibrium calculation
+// undo physics
+// good window resizing
+// higher-res exporting (canvas resize trick)
 
 const c = document.getElementById("canvas");
 const ctx = c.getContext("2d");
@@ -73,8 +82,32 @@ var opacity = 0.5;
 var showPoints = true;
 var showEdges = true;
 
+window.addEventListener('load', function() {
+	document.querySelector('input[type="file"]').addEventListener('change', function(){
+		if(this.files && this.files[0]){
+			imageObj.src = URL.createObjectURL(this.files[0]);
+			imageObj.onload = function() {
+				document.getElementById("uploadDiv").hidden = true;
+				init();
+			}
+			
+		}
+	})
+});
+
 function init() {
-	//points = generatePoints(n, r);
+	// set the canvas width and height to make it the right aspect ratio
+	let screenAspect = c.width/c.height;
+	let imageAspect = imageObj.width / imageObj.height;
+
+	if(imageAspect < screenAspect) {
+		// it's tall, squeeze the canvas width
+		c.width = c.height * imageAspect;
+	} 
+	else {
+		// it's wide, squeeze the canvas height
+		c.height = c.width / imageAspect;
+	}
 
 	ctx.drawImage(imageObj, 0, 0, c.width, c.height);
 	imageData = ctx.getImageData(0, 0, c.width, c.height).data;
@@ -130,22 +163,6 @@ playPhysicsButton.addEventListener("click", function() {
 		playingPhysics = true;
 	}
 })
-
-
-
-window.addEventListener('load', function() {
-	document.querySelector('input[type="file"]').addEventListener('change', function(){
-		if(this.files && this.files[0]){
-			imageObj.src = URL.createObjectURL(this.files[0]);
-			imageObj.onload = function() {
-				// drawImage(imageObj);
-				document.getElementById("uploadDiv").hidden = true;
-				init();
-			}
-			
-		}
-	})
-});
 
 let dragging = null;
 let moved = false;
