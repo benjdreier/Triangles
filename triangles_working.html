@@ -16,12 +16,13 @@
 		<input type="checkbox" id="showPoints" checked> Show Points? <br>
 
 		<input type="button" id="playPhysics" value="▷ Play Physics">
+		<input type="button" id="undoPhysics" value="Undo Physics" hidden>
 
 
 	</div>
 </div>
 
-<canvas id="canvas"></canvas>
+<canvas id="canvas" hidden></canvas>
 
 <script> 
 // Make the toolbox minimizable on click
@@ -47,13 +48,13 @@ toolboxHeader.addEventListener("click", function(e){
 <script type="module">
 
 // TODO:
-// Stop Strecthing the gd picture
 // Saving/Loading point sets
 // Multiple "Layers"/clouds
 // Reconsider equilibrium calculation
 // undo physics
 // good window resizing
 // higher-res exporting (canvas resize trick)
+// better equilibrium distance; maybe initialize to the lengths when u press play
 
 const c = document.getElementById("canvas");
 const ctx = c.getContext("2d");
@@ -88,6 +89,7 @@ window.addEventListener('load', function() {
 			imageObj.src = URL.createObjectURL(this.files[0]);
 			imageObj.onload = function() {
 				document.getElementById("uploadDiv").hidden = true;
+				c.hidden = false;
 				init();
 			}
 			
@@ -127,8 +129,8 @@ function update() {
 	if(playingPhysics) {
 		// this makes them act like a spring
 		nudgePoints(points, delauny);
-		// this makes it act more like a cloud
-		//meanderPoints();
+		// this will make it act more like a cloud
+		// meanderPoints();
 	}
 
 }
@@ -138,6 +140,7 @@ let opacityRange = document.getElementById("opacityRange");
 let showEdgesBox = document.getElementById("showEdges");
 let showPointsBox = document.getElementById("showPoints");
 let playPhysicsButton = document.getElementById("playPhysics"); 
+let undoPhysicsButton = document.getElementById("undoPhysics");
 
 opacityRange.addEventListener("input", function() {
 	console.log(opacityRange.value / 100);
@@ -153,6 +156,9 @@ showPointsBox.addEventListener("change", function() {
 });
 
 let playingPhysics = false;
+let fixedPoints = [];
+let pointsSave = [];
+
 playPhysicsButton.addEventListener("click", function() {
 	if(playingPhysics) {
 		playPhysicsButton.value = "▷ Play Physics";
@@ -161,6 +167,15 @@ playPhysicsButton.addEventListener("click", function() {
 	else {
 		playPhysicsButton.value = "❚❚ Pause Physics";
 		playingPhysics = true;
+
+		// save the state of the points before playing physics
+		// and save the hull so points don't stick
+
+		fixedPoints = delauny.hull;
+		pointsSave = points;
+
+		// and show the undo physics button
+
 	}
 })
 
@@ -280,7 +295,7 @@ function drawAccels() {
 // save the hull when the button is clicked and don't change it even as point leave
 // alternatively/also, make the meandering system where they'll float around and
 // probably won't get to the hull
-let fixHull = true;
+let fixSomePoints = true;
 function meanderPoints() {
 
 }
@@ -296,18 +311,15 @@ function nudgePoints(points, delauny) {
 
 	// use accels to update velocities
 	for(let i in accels) {
-		// only push if they don't have the immovable=true flag
-		if(points[i][2] != true) {
-			// also if it's not on the hull or we aren't fixing the hull
-			let isInterior = delauny.hull.indexOf(+i) == -1;
-			
-			if(!fixHull || isInterior){
-				vels[i][0] += j * accels[i][0];
-				vels[i][1] += j * accels[i][1];
-				// now use vel to update position
-				points[i][0] += vels[i][0];
-				points[i][1] += vels[i][1];
-			}
+		// only push if it's not on the hull or we aren't fixing the hull
+		let isFixed = fixedPoints.indexOf(+i) >= 0;	
+
+		if(!(fixSomePoints && isFixed)){
+			vels[i][0] += j * accels[i][0];
+			vels[i][1] += j * accels[i][1];
+			// now use vel to update position
+			points[i][0] += vels[i][0];
+			points[i][1] += vels[i][1];
 		}
 		else {
 			console.log("u r the only exception");
