@@ -1,8 +1,12 @@
 <html>
 <head>
+	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" integrity="sha384-JcKb8q3iqJ61gNV9KGb8thSsNjpSL0n8PARn9HuZOnIxN0hoP+VmmDGMN5t9UJ0Z" crossorigin="anonymous">
 	<link rel="stylesheet" href="style.css">
+	<title>Triangles | Ben Dreier</title>
 </head>
-<body style="margin: 0">
+<body>
+
+<h1>Triangles.</h1>
 
 <div id="uploadDiv"> Upload Image: <input type="file"> </div>
 
@@ -111,6 +115,8 @@ function init() {
 		c.height = c.width / imageAspect;
 	}
 
+	
+
 	ctx.drawImage(imageObj, 0, 0, c.width, c.height);
 	imageData = ctx.getImageData(0, 0, c.width, c.height).data;
 	console.log(points);
@@ -185,21 +191,24 @@ c.addEventListener('mousedown', function(e) {
 
 	if (e.which == 3) return;
 
-	let target = getTargetPoint(e.clientX, e.clientY, 5);
+	let clickPos = getMousePos(c, e);
+
+	let target = getTargetPoint(clickPos.x, clickPos.y, 5);
 	if(target) {
 		moved = false;
 		dragging = target;
 		return;
 	}
 	moved = true;
-	dragging = addPoint(e.clientX, e.clientY);
+	dragging = addPoint(clickPos.x, clickPos.y);
 
 });
 c.addEventListener('mousemove', function(e) {
 	if(dragging) {
 		moved = true;
-		points[dragging][0] = e.clientX;
-		points[dragging][1] = e.clientY;
+		let clickPos = getMousePos(c, e);
+		points[dragging][0] = clickPos.x;
+		points[dragging][1] = clickPos.y;
 	}
 })
 c.addEventListener('mouseup', function(e) {
@@ -211,6 +220,14 @@ c.addEventListener('mouseup', function(e) {
 	dragging = null;
 	console.log(points);
 });
+
+function getMousePos(canvas, evt) {
+	var bound = canvas.getBoundingClientRect();
+	return {
+		x: evt.clientX - bound.left,
+		y: evt.clientY - bound.top
+	}
+}
 
 function addPoint(x, y) {
 	points.push([x, y]);
@@ -229,8 +246,10 @@ function removePoint(i) {
 
 // find the first point within r of the coordinates
 function getTargetPoint(x, y, r) {
+	console.log(x, y);
 	for(let i in points) {
 		let p = points[i];
+		console.log(p[0], p[1]);
 		if(dist(p, [x, y]) < r) {
 			return i;
 		}
@@ -384,7 +403,6 @@ function drawTrisFilled(alpha) {
 
         // for the radius of this calculate the incircle radius
         let colorRadius = incircleRadius(trips[0], trips[1], trips[2]);
-        console.log("radius:", colorRadius);
 
         ctx.fillStyle = colorAroundPoint(imageData, center, colorRadius, alpha);
 
